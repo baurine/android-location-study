@@ -67,5 +67,65 @@ Android 提供 2 种 location permission：`ACCESS_FINE_LOCATION` 和 `ACCESS_CO
 
 运行结果：
 
-- 在我的已安装最新版 Google Play 的手机上，得到了 null 值的 location ...
-- 在一台安装了老版本 Google Play 的手机上运行时，自动弹出了 Dialog 说道：您必须更新 Google Play 服务，然后才能运行 GoogleLocationSample。
+- 在我的已安装最新版 Google Play 的 Meizu MX4 Pro (Android 5.1.1) 上，得到了 null 值的 location，且没有弹出需要获取位置权限的通知 (对国产手机的兼容性极差)
+- 在一台安装了老版本 Google Play 的 Samsung 手机上运行时，自动弹出了 Dialog 说道：您必须更新 Google Play 服务，然后才能运行 GoogleLocationSample。
+- 在安装了最新版的 Google Play 的 OnePlus 3T (android 7.1) 上运行，一切正常。
+
+### Changing Location Settings & Receiving Location Updates
+
+监听 location 的流程：
+
+1. 动态检查并请求 location 权限
+
+1. 检查当前手机的设置是否能够符合我们想要请求的 location 的精度要求。比如通过 蜂窝/WIFI/GPS 都可以取到 location，但前二者的精度较低，GPS 的精度较高。如果我们想请求高精度的 location，却发现只有 wifi 和蜂窝的开关打开了，GPS 的开关没有打关，这样的设置就不符合我们的要求，此时，我们就需要请求用户打开 GPS 开关。
+
+   这里面涉及到三个类，LocationRequest，表示我们对 location 的要求，主要是精度要求，有四种值，后面再讲。LocationSettingRequest，这个请求用来查询当前手机设置与我们想要的 LocationRequest 是否匹配，所以，这个 LocationSettingRequest 自然是需要和 LocationRequest 关联的，因此 LocationSettingRequest 是这样生成的：
+
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(UPDATE_INTERVAL_IN_MILLISECONDS);
+        mLocationRequest.setFastestInterval(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+        mLocationSettingsRequest = new LocationSettingsRequest.Builder()
+                .addLocationRequest(mLocationRequest)
+                .build();
+
+   然后，我们用 SettingClient 来实现设置的查询：
+
+        SettingsClient client = LocationServices.getSettingsClient(this);
+        Task<LocationSettingsResponse> task = client.checkLocationSettings(mLocationSettingsRequest);
+
+   SettingsClient.checkLocationSettings() 返回值是一个 task，我们给 task 注册成功和失败的监听器，如果产生失败的回调，说明当前手机设置没有达到我们的 location 要求，需要更改手机设置，因此我们要弹出 dialog 提示用户去修改设置，打开更多开关。如果产生成功的回调，说明当前手机设置是 OK 的，不需要修改。
+
+1. 在上一步 task 的成功回调中，用 FusedLocationProviderClient.requestLocationUpdates() 去请求并监听 location 的变化，其中第一个参数 LocationRequest 必须和上一步中查询设置所用到的 LocationRequest 保持一致。
+
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                super.onLocationResult(locationResult);
+                mCurrentLocation = locationResult.getLastLocation();
+                // ...
+                // updateUI();
+            }
+        };
+
+        task.addOnSuccessListener(this, new OnSuccessListener<LocationSettingsResponse>() {
+                    @SuppressWarnings("MissingPermission")
+                    @Override
+                    public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                        mFusedLocationClient.requestLocationUpdates(mLocationRequest,
+                                mLocationCallback, Looper.myLooper());
+                        //...
+                    }
+                })
+            .addOnFailureListener(...)
+
+整个流程还是有点麻烦的，麻烦也还好啦，但最关键的是，测试后发现，这套 API 在我的国产手机 Meizu Android 5.0 上基本不 work (尽管已经安装了最新版的 Google Play)，也没有什么错误，但就是得不到结果...在 OnePlus 3T Android 7.0 上是正常的。
+
+LocationRequest 的精度要求的四个级别：
+
+- `PRIORITY_BALANCED_POWER_ACCURACY`: 大概是一个街区 100 米的精度，可能使用 WIFI 或 cell，coarse 的精度
+- `PRIORITY_HIGH_ACCURACY`: 可能使用 GPS，一步的精度?
+- `PRIORITY_LOW_POWER`: 10 千米的精度
+- `PRIORITY_NO_POWER`: 不会主动获取 location，只会被动的接受别的 app 获取的 location
