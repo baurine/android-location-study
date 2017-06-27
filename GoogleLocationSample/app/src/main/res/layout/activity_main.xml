@@ -6,22 +6,10 @@
               android:orientation="vertical"
               android:padding="16dp">
 
-    <TextView
-        android:id="@+id/latitude_text"
-        android:layout_width="wrap_content"
+    <Button
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="10dp"
-        android:layout_marginStart="10dp"
-        android:textIsSelectable="true"
-        android:textSize="16sp"/>
-
-    <TextView
-        android:id="@+id/longitude_text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginLeft="10dp"
-        android:layout_marginStart="10dp"
-        android:layout_marginTop="16dp"
-        android:textIsSelectable="true"
-        android:textSize="16sp"/>
+        android:onClick="onClick"
+        android:text="LastLocationActivity"
+        android:textAllCaps="false"/>
 </LinearLayout>
