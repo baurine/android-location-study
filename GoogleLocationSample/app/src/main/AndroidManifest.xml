@@ -24,6 +24,12 @@
                 <category android:name="android.intent.category.DEFAULT"/>
             </intent-filter>
         </activity>
+        <activity android:name=".LocationUpdateActivity">
+            <intent-filter>
+                <action android:name="com.baurine.googlelocationsample.LocationUpdateActivity"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
