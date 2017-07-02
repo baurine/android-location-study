@@ -167,3 +167,181 @@ Geocode 是同步调用，而它对 location 进行转换又是一个耗时操�
     }
 
 ### Creating and Monitoring Geofences 
+
+The latitude, longitude, and radius define a geofence, creating a circular area, or fence, around the location of interest.
+
+You can have multiple active geofences, with a limit of 100 per device user. For each geofence, you can ask Location Services to send you entrance and exit events, or you can specify a duration within the geofence area to wait, or dwell, before triggering an event. You can limit the duration of any geofence by specifying an expiration duration in milliseconds. After the geofence expires, Location Services automatically removes it.
+
+![](https://developer.android.com/images/training/geofence.png)
+
+我的理解：Geofence 就是你划定的一块范围，然后你可以监听当前 location 的变化，如果当前 location 进入或离开，或停留在刚才划定的那块范围内，就会收到相应的事件通知。
+
+运行本小节的[示例工程](https://github.com/googlesamples/android-play-location/tree/master/Geofencing)，因为程序中默认划定的区域是硅谷，所以你除非在硅谷，否则测试时永远收不到事件通知，修改代码，加上当前你所在位置的区域，就能收到通知了。
+
+    // Constants.java
+    static {
+        // San Francisco International Airport.
+        BAY_AREA_LANDMARKS.put("SFO", new LatLng(37.621313, -122.378955));
+
+        // Googleplex.
+        BAY_AREA_LANDMARKS.put("GOOGLE", new LatLng(37.422611,-122.0840577));
+
+        // MyLocation
+        BAY_AREA_LANDMARKS.put("BAOSHAN", new LatLng(31.323331,121.392625));
+    }
+
+收到的通知：
+
+![](./art/geofence_notification.png)
+
+#### Set up for Geofence Monitoring
+
+1. 在 AndroidManifest.xml 中声明 `android.permission.ACCESS_FINE_LOCATION` 权限。
+
+1. 在 AndroidManifest.xml 中添加用于处理 Geofence 事件的 IntentService。
+
+        <application
+            android:allowBackup="true">
+            ...
+            <service android:name=".GeofenceTransitionsIntentService"/>
+        <application/>
+
+1. 创建 GeofencingClient 实例。
+
+        private GeofencingClient mGeofencingClient;
+        // ...
+        mGeofencingClient = LocationServices.getGeofencingClient(this);
+
+#### Create and Add Geofences
+
+创建 Geofence，Geofence 就是一块区域范围，是圆形的，指定经纬度作为圆心，再指定一个半径作为范围，还可以指定监听这个 Geofence 的变化类型，是监听进入，还是离开，还是停留，或者是都监听。Geofence 可以由 Geofence.Builder 来生成。
+
+可以创建多个 Geofence，把它们加入一个列表中，然后用这个列表去创建 GeofenceRequest，GeofenceRequest 可以用 GeofencingRequest.Builder 来生成。
+
+之后再创建 PendingIntent 来处理 Geofence 的变化事件。
+
+最后，把 GeofenceRequest 和 PendingIntent 加入到 GeofencingClient 中，开始监听 Geofence 事件。
+
+##### Create geofence objects
+
+    mGeofenceList.add(new Geofence.Builder()
+        // Set the request ID of the geofence. This is a string to identify this
+        // geofence.
+        .setRequestId(entry.getKey())
+
+        .setCircularRegion(
+                entry.getValue().latitude,
+                entry.getValue().longitude,
+                Constants.GEOFENCE_RADIUS_IN_METERS
+        )
+        .setExpirationDuration(Constants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
+        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER |
+                Geofence.GEOFENCE_TRANSITION_EXIT)
+        .build());
+
+在这个例子中，Geofence 的经纬度是个常量，实际项目中，这个值会根据我们的当前位置来动态生成。
+
+##### Specify geofences and initial triggers
+
+    private GeofencingRequest getGeofencingRequest() {
+        GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
+        builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
+        builder.addGeofences(mGeofenceList);
+        return builder.build();
+    }
+
+`INITIAL_TRIGGER_ENTER` 表示，当监听开始时，如果当前位置已处于所划定的 Geofence 中时，会触发 Geofence 的 `GEOFENCE_TRANSITION_ENTER` 事件。
+
+为是减少 spam 打扰及减少电池消耗，更推存使用 `INITIAL_TRIGGER_DWELL`，它表示，只有当你在某个 Geofence 中停留超过指定的时长后，才会触发事件。
+
+另外，当 Geofence 的范围设置为不小于 100 米，也可以减少电池消耗，及减小 WIFI 的 location 精确度的影响。
+
+##### Define an Intent for geofence transitions
+
+    public class MainActivity extends AppCompatActivity {
+        // ...
+        private PendingIntent getGeofencePendingIntent() {
+            // Reuse the PendingIntent if we already have it.
+            if (mGeofencePendingIntent != null) {
+                return mGeofencePendingIntent;
+            }
+            Intent intent = new Intent(this, GeofenceTransitionsIntentService.class);
+            // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when
+            // calling addGeofences() and removeGeofences().
+            mGeofencePendingIntent = PendingIntent.getService(this, 0, intent, PendingIntent.
+                    FLAG_UPDATE_CURRENT);
+            return mGeofencePendingIntent;
+    }
+
+##### Add geofences
+
+    mGeofencingClient.addGeofences(getGeofencingRequest(), getGeofencePendingIntent())
+        .addOnSuccessListener(this, new OnSuccessListener<Void>() {
+            @Override
+            public void onSuccess(Void aVoid) {
+                // Geofences added
+                // ...
+            }
+        })
+        .addOnFailureListener(this, new OnFailureListener() {
+            @Override
+            public void onFailure(@NonNull Exception e) {
+                // Failed to add geofences
+                // ...
+            }
+        });
+
+#### Handle Geofence Transitions
+
+When Location Services detects that the user has entered or exited a geofence, it sends out the Intent contained in the PendingIntent you included in the request to add geofences. This Intent is received by a service like GeofenceTransitionsIntentService, which obtains the geofencing event from the intent, determines the type of Geofence transition(s), and determines which of the defined geofences was triggered. It then sends a notification as the output.
+
+当 Location Service 检测到当前用户进入或离开一个 Geofence 时，它会发出一个注册在 GeofencingClient 中的 PendingIntent，这个 Intent 将会交给指定的 IntentService 处理，这个 intent 中携带了触发 Geofence 的事件类型等数据。
+
+    public class GeofenceTransitionsIntentService extends IntentService {
+        // ...
+        protected void onHandleIntent(Intent intent) {
+            GeofencingEvent geofencingEvent = GeofencingEvent.fromIntent(intent);
+            if (geofencingEvent.hasError()) {
+                String errorMessage = GeofenceErrorMessages.getErrorString(this,
+                        geofencingEvent.getErrorCode());
+                Log.e(TAG, errorMessage);
+                return;
+            }
+
+            // Get the transition type.
+            int geofenceTransition = geofencingEvent.getGeofenceTransition();
+
+            // Test that the reported transition was of interest.
+            if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER ||
+                    geofenceTransition == Geofence.GEOFENCE_TRANSITION_EXIT) {
+
+                // Get the geofences that were triggered. A single event can trigger
+                // multiple geofences.
+                List<Geofence> triggeringGeofences = geofencingEvent.getTriggeringGeofences();
+
+                // Get the transition details as a String.
+                String geofenceTransitionDetails = getGeofenceTransitionDetails(
+                        this,
+                        geofenceTransition,
+                        triggeringGeofences
+                );
+
+                // Send notification and log the transition details.
+                sendNotification(geofenceTransitionDetails);
+                Log.i(TAG, geofenceTransitionDetails);
+            } else {
+                // Log the error.
+                Log.e(TAG, getString(R.string.geofence_transition_invalid_type,
+                        geofenceTransition));
+            }
+        }
+
+#### Stop Geofence Monitoring
+
+调用 GeofencingClient 实例的 removeGeofences() 方法。有两种实现，一种是参数是 PendingIntent，一种是参数是 List<String>，表示 Geofences 的 RequestId。
+
+#### Use Best Practices for Geofencing
+
+略，用到时再回来细看。总体而言，主要是选择最优的半径，Geofence 的半径不要太小，尽量选择 DWELL 的事件类型，替代 ENTER。
+
+(貌似 Geofence 的功能主要是依赖 WIFI 来定位，而不是 GPS??，因为 WIFI 的精度已经能达到 100m，而 Geofence 推荐的最小半径就是 100m)。
