@@ -188,8 +188,8 @@ public class LocationUpdateActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
+    protected void onStart() {
+        super.onStart();
 
         if (mRequestingLocationUpdates && checkPermissions()) {
             startLocationUpdates();
@@ -201,8 +201,8 @@ public class LocationUpdateActivity extends AppCompatActivity {
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
+    protected void onStop() {
+        super.onStop();
 
         stopLocationUpdates();
     }
