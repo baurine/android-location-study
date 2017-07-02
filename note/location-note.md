@@ -73,6 +73,8 @@ Android 提供 2 种 location permission：`ACCESS_FINE_LOCATION` 和 `ACCESS_CO
 
 ### Changing Location Settings & Receiving Location Updates
 
+**初步测试发现，此功能需要 VPN 支持**
+
 监听 location 的流程：
 
 1. 动态检查并请求 location 权限
@@ -129,3 +131,39 @@ LocationRequest 的精度要求的四个级别：
 - `PRIORITY_HIGH_ACCURACY`: 可能使用 GPS，一步的精度?
 - `PRIORITY_LOW_POWER`: 10 千米的精度
 - `PRIORITY_NO_POWER`: 不会主动获取 location，只会被动的接受别的 app 获取的 location
+
+googlesamples 里还有两个例子：
+
+- Location Updates using a PendingIntent: Get updates about a device's location using a PendingIntent. Sample shows implementation using an IntentService as well as a BroadcastReceiver. 在 FusedLocationProviderClient.requestLocationUpdates(locationRequest, pendingIntent) 方法中，没有使用 callback 来接收回调，而是用 pendingIntent 来接收新的 location。
+- Location Updates using a Foreground Service: Get updates about a device's location using a bound and started foreground service. 在 Foreground Service 中监听 location。
+
+### Displaying a Location Address
+
+**初步测试发现，此功能需要 VPN 支持，holy shit! Geocoder 不是 android 框架的内容吗? 这也不能用，太夸张了吧**
+
+将地址转换成 location 坐标，这个过程叫 geocoding，将 location 坐标转换成地址，这个过程叫 reverse geocoding，Android 框架中提供了原生 API Geocoder 来处理这个事情，使用 Geocoder.getFromLocation() 方法。
+
+Geocode 是同步调用，而它对 location 进行转换又是一个耗时操作，所以要把它放到一个单独的线程里工作，可以选择 AsyncTask 或 IntentService，但前者和 Activity 的生命周期相关，如果 Activity 中途被重建了，AsyncTask 的结果就不会更新到新的 Activity 上，所以文档中选择了使用 IntentService 来在后台进行转换，通过 ResultReceiver 回传 address 结果。(注意，这里的 ResultReceiver 只是一个普通的 Parcelable，跟 BroadcastReceiver 没有关系)。
+
+核心代码：
+
+    try {
+        addresses = geocoder.getFromLocation(
+                location.getLatitude(),
+                location.getLongitude(),
+                // In this sample, get just a single address.
+                1);
+    } catch (IOException ioException) {
+        // Catch network or other I/O problems.
+        errorMessage = getString(R.string.service_not_available);
+        Log.e(TAG, errorMessage, ioException);
+    } catch (IllegalArgumentException illegalArgumentException) {
+        // Catch invalid latitude or longitude values.
+        errorMessage = getString(R.string.invalid_lat_long_used);
+        Log.e(TAG, errorMessage + ". " +
+                "Latitude = " + location.getLatitude() +
+                ", Longitude = " +
+                location.getLongitude(), illegalArgumentException);
+    }
+
+### Creating and Monitoring Geofences 
