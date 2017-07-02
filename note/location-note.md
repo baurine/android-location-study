@@ -166,7 +166,7 @@ Geocode 是同步调用，而它对 location 进行转换又是一个耗时操�
                 location.getLongitude(), illegalArgumentException);
     }
 
-### Creating and Monitoring Geofences 
+### Creating and Monitoring Geofences
 
 The latitude, longitude, and radius define a geofence, creating a circular area, or fence, around the location of interest.
 
@@ -345,3 +345,96 @@ When Location Services detects that the user has entered or exited a geofence, i
 略，用到时再回来细看。总体而言，主要是选择最优的半径，Geofence 的半径不要太小，尽量选择 DWELL 的事件类型，替代 ENTER。
 
 (貌似 Geofence 的功能主要是依赖 WIFI 来定位，而不是 GPS??，因为 WIFI 的精度已经能达到 100m，而 Geofence 推荐的最小半径就是 100m)。
+
+### Recognizing the User's Current Activity
+
+这部分内容只有[示例代码](https://github.com/googlesamples/android-play-location/tree/master/ActivityRecognition)，没有详细的使用介绍。
+
+示例代码运行结果：
+
+![](./art/activity_recognition.png)
+
+[ActivityRecognitionApi](https://developers.google.com/android/reference/com/google/android/gms/location/ActivityRecognitionApi) 可以识别用户当前进行的活动，比如是在走路啊，还是开车，或是静止。
+
+看了文档和代码，用起来比较简单，API 也很少，和 Geofence 的用法很相似，首先向 GoogleApiClient 注册监听 Activity 的变化，然后 Activity 的变化会通过 Intent 发送到 IntentService 处理。IntentService 在 handleIntent() 中可以将结果发送到通知栏，或是通过广播发送给 BroadcastReceiver。
+
+ActivityRecognitionApi 需要 `com.google.android.gms.permission.ACTIVITY_RECOGNITION` 权限，只需在 AndroidManifest.xml 中声明一下就行，不用动态申请，我猜想，亦从文档中得知，这个活动检测是通过传感器来实现的，跟 location 没有关系，因为此示例代码并没有申请 location 权限。
+
+> he activities are detected by periodically waking up the device and reading short bursts of sensor data. It only makes use of low power sensors in order to keep the power usage to a minimum.
+
+#### ActivityRecognitionApi 的使用
+
+**连接 GoogleApiClient** 
+
+(我猜以后应该也可以直接用 LocationService 来替代)
+
+    protected synchronized void buildGoogleApiClient() {
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                .enableAutoManage(this, this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(ActivityRecognition.API)
+                .build();
+    }
+
+**定义用来处理结果的 PendingIntent 和 IntentService**
+
+    /**
+     * Gets a PendingIntent to be sent for each activity detection.
+     */
+    private PendingIntent getActivityDetectionPendingIntent() {
+        Intent intent = new Intent(this, DetectedActivitiesIntentService.class);
+
+        // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when calling
+        // requestActivityUpdates() and removeActivityUpdates().
+        return PendingIntent.getService(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    public class DetectedActivitiesIntentService extends IntentService {
+        ...
+    }
+
+**请求监听 Activity 变化**
+
+    public void requestActivityUpdatesButtonHandler(View view) {
+        if (!mGoogleApiClient.isConnected()) {
+            Toast.makeText(this, getString(R.string.not_connected),
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ActivityRecognition.ActivityRecognitionApi.requestActivityUpdates(
+                mGoogleApiClient,
+                Constants.DETECTION_INTERVAL_IN_MILLISECONDS,
+                getActivityDetectionPendingIntent()
+        ).setResultCallback(this);
+    }
+
+`setResultCallback(this)` 的 callback 用来处理是否注册或者移除监听器成功。
+
+**操作结果**
+
+    // DetectedActivitiesIntentService.java
+    protected void onHandleIntent(Intent intent) {
+        ActivityRecognitionResult result = ActivityRecognitionResult.extractResult(intent);
+        Intent localIntent = new Intent(Constants.BROADCAST_ACTION);
+
+        // Get the list of the probable activities associated with the current state of the
+        // device. Each activity is associated with a confidence level, which is an int between
+        // 0 and 100.
+        ArrayList<DetectedActivity> detectedActivities = (ArrayList) result.getProbableActivities();
+
+        // Log each activity.
+        Log.i(TAG, "activities detected");
+        for (DetectedActivity da: detectedActivities) {
+            Log.i(TAG, Constants.getActivityString(
+                            getApplicationContext(),
+                            da.getType()) + " " + da.getConfidence() + "%"
+            );
+        }
+
+        // Broadcast the list of detected activities.
+        localIntent.putExtra(Constants.ACTIVITY_EXTRA, detectedActivities);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(localIntent);
+    }
+
+（如果不能用 GooglePlay，那有没有第三方实现此功能的库啊??)
