@@ -438,3 +438,80 @@ ActivityRecognitionApi 需要 `com.google.android.gms.permission.ACTIVITY_RECOGN
     }
 
 （如果不能用 GooglePlay，那有没有第三方实现此功能的库啊??)
+
+## Note 2
+
+使用 Google Maps API。
+
+学习文档：
+1. [Adding Maps](https://developer.android.com/training/maps/index.html)
+1. [Maps API Getting Started](https://developers.google.com/maps/documentation/android-api/start)
+
+### 使用入门
+
+创建 Android Studio 工程，选择 Google Maps Activity 模板，将会自动生成关于 Maps 的代码。
+
+根据生成代码中的提示，从 Google Console 中创建 Maps API 的秘钥，然后再填回工程中。
+
+That's all，然后工程就可以跑起来了。
+
+核心代码：
+
+    public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
+
+        private GoogleMap mMap;
+
+        @Override
+        protected void onCreate(Bundle savedInstanceState) {
+            super.onCreate(savedInstanceState);
+            setContentView(R.layout.activity_maps);
+            SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
+                    .findFragmentById(R.id.map);
+            mapFragment.getMapAsync(this);
+        }
+
+        @Override
+        public void onMapReady(GoogleMap googleMap) {
+            mMap = googleMap;
+
+            // Add a marker in Sydney, Australia, and move the camera.
+            LatLng sydney = new LatLng(-34, 151);
+            mMap.addMarker(new MarkerOptions().position(sydney).title("Marker in Sydney"));
+            mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney));
+        }
+    }
+
+### 创建地图 - 地图对象
+
+重要的内容，讲解了 GoogleMap 对象的一些配置 api，比如地图类型，摄像头初始位置...
+
+1. 展示地图的容器：MapFragment 或 MapView，MapView 与 MapFragment 很相似，它也充当地图容器，通过 GoogleMap 对象公开核心地图功能。推荐使用前者。
+1. 地图对象 GoogleMap，由上例可知，可以 onMapReady(GoogleMap googleMap) 回调中取得，回调通过 MapFragment 的 getMapAsync() 方法注册。
+
+### 在地图上绘制 
+
+#### 标记
+
+详细介绍 `GoogleMap.addMarker(markerOptions)` 的具体使用。
+
+其它略，需要时再回来细看。
+
+#### 形状
+
+Google Maps API for Android 提供了一些简单的方法，让您可以方便地向地图添加形状，以针对您的应用对地图进行定制。
+
+- Polyline 是一系列相连的线段，可组成您想要的任何形状，并可用于在地图上标记路径和路线
+- Polygon 是一种封闭形状，可用于在地图上标记区域
+- Circle 是投影在绘制于地图上的地球表面上地理位置准确的圆圈
+
+对于所有上述形状，您都可以通过改变若干属性来定制其外观。
+
+### 与地图交互 - 位置数据
+
+只有需要在地图上显示当前位置时，我们才需要 location permission，否则，单独使用地图是不需要地理位置权限的。
+
+`mMap.setMyLocationEnabled(true)` 启用 My Location 层，My Location 按钮会出现在地图的右上角。 当用户点击该按钮时，摄像头将设备的当前位置（若已知）显示为地图的中心。 设备处于静止状态时，地图以小蓝点指示该位置；处于运动状态时则以 V 形指示该位置。
+
+虽然点击此按钮后会定位到当前位置，但 map 并没有提供 api 去获取这个位置的具体值，你还是需要自己手动通过 Location API 去拿到当前位置的值。
+
+(咦，GoogleMaps API 并不需要处理 GoogleApiClient 连接的问题... 嗯，也是可以理解的，这部分功能应该是 GoogleMaps SDK 独立处理的)
