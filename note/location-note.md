@@ -1,6 +1,88 @@
 # Android Location Note
 
+实现获取定位的几种方法：
+
+1. Android 原生 Location API
+1. Google Play LocationService API (国内不可用)
+1. 百度或高德的地图 SDK (国内推荐使用)
+
 ## Note 1
+
+Android 原生 Location API。
+
+学习文档：
+
+1. [Location and Sensors APIs](https://developer.android.com/guide/topics/sensors/index.html)
+1. [Location and Maps](https://developer.android.com/guide/topics/location/index.html)
+1. [Location Strategies](https://developer.android.com/guide/topics/location/strategies.html)
+1. [Android 地理位置服务解析](http://unclechen.github.io/2016/09/02/Android%E5%9C%B0%E7%90%86%E4%BD%8D%E7%BD%AE%E6%9C%8D%E5%8A%A1%E8%A7%A3%E6%9E%90/) (下面许多内容来自此文)
+
+三种定位方式：GPS，WIFI，基站。
+
+三种 PROVIDER：
+
+1. `LocationManager.GPS_PROVIDER` - 通过 GPS 定位，精度高，但耗电和耗时。
+1. `LocationManager.NETWORK_PROVIDER` - 通过 WIFI 或基站定位，获取速度快，但精度比 GPS 低。
+1. `LocationManager.PASSIVE_PROVIDER` - 被动的接收更新的地理位置信息，而不用自己主动请求地理位置。意思就是共享手机上其他App采集的位置信息，而不是自己主动去采集。
+
+选择 provider 的策略：
+
+1. 如果应用只是偶尔用一下定位，不考虑省电的情况，可以直接指定使用某个 provider，简单粗暴，反正总共就 3 个，常用的就 2 个，不需要太高精确度就选 `NETWORK_PROVIDER`，考虑精确度就选 `GPS_PROVIDER`。
+1. 稍微智能一点，根据当前用户设置来选择某个 provider，比如用户如果 GPS 没开那就选 `NETWORK_PROVIDER` 好了，或者提示用户把开关打开；如果 `GPS_PROVIDER` 某个时长内没有获取到 location，就再尝试用`NETWORK_PROVIDER`。
+1. 如果再要考虑到省电的情况 (比如要长时间监听 location 变化)，那么就要根据更多的情况来选择某个 provider，比如电量，用户设置等情况。监听用户手机的系统状况，比如当电量低于 10% 时，切换成 `PASSIVE_PROVIDER`；通过 sensor 监听手机的活动情况，如果长时间处于 still 状态，就停止监听或降低监听的频率，如果处于 driving 的状态，就提高监听的频率和减小监听的范围。
+1. 使用 Criteria 类，设置希望的要求，让系统帮我们选一个 provider。
+
+        Criteria criteria = new Criteria();
+        criteria.setAccuracy(Criteria.ACCURACY_FINE);           // 设置定位精准度
+        criteria.setAltitudeRequired(false);                    // 是否要求海拔
+        criteria.setBearingRequired(true);                      // 是否要求方向
+        criteria.setCostAllowed(true);                          // 是否要求收费
+        criteria.setSpeedRequired(true);                        // 是否要求速度
+        criteria.setPowerRequirement(Criteria.POWER_LOW);       // 设置相对省电
+        criteria.setBearingAccuracy(Criteria.ACCURACY_HIGH);    // 设置方向精确度
+        criteria.setSpeedAccuracy(Criteria.ACCURACY_HIGH);      // 设置速度精确度
+        criteria.setHorizontalAccuracy(Criteria.ACCURACY_HIGH); // 设置水平方向精确度
+        criteria.setVerticalAccuracy(Criteria.ACCURACY_HIGH);   // 设置垂直方向精确度
+
+        // 返回满足条件的，当前设备可用的 location provider
+        // 当第 2 个参数为 false 时，返回当前设备所有 provider 中最符合条件的那个（但是不一定可用）
+        // 当第 2 个参数为 true 时，返回当前设备所有可用的 provider 中最符合条件的那个
+        String rovider  = mLocationManager.getBestProvider(criteria, true);
+
+### 基本使用
+
+获得 LocationManager 实例，创建 LocationListener，选择合适的 provider，调用 locationManager.requestLocationUpdate() 来监听 location 变化。
+
+    // 获得 LocationManager 的实例
+    LocationManager locationManager = (LocationManager)this.getSystemService(Context.LOCATION_SERVICE);
+
+    // 定义一个监听器，实现 onLocationChanged 方法，在这个方法里面可以拿到更新后的地理位置
+    LocationListener locationListener = new LocationListener() {
+        public void onLocationChanged(Location location) {
+            // 新的 Location 值在这里返回，Location 实例中包含着纬度、经度、海拔、精确度、更新时间等一系列信息。
+            makeUseOfNewLocation(location);
+        }
+        public void onStatusChanged(String provider, int status, Bundle extras) {}
+        public void onProviderEnabled(String provider) {}
+        public void onProviderDisabled(String provider) {}
+    };
+
+    // 注册监听器，当地理位置变化时，发出通知给 Listener。这个方法很关键。4 个参数需要了解清楚：
+    // 第 1 个参数：你所使用的 provider 名称，是个 String
+    // 第 2 个参数 minTime：地理位置更新时发出通知的最小时间间隔
+    // 第 3 个参数 minDistance：地理位置更新发出通知的最小距离，第 2 和第 3 个参数的作用关系是“或”的关系，也就是满足任意一个条件都会发出通知。这里第 2、3 个参数都是 0，意味着任何时间，只要位置有变化就会发出通知。
+    // 第 4 个参数：你的监听器
+    locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
+
+不需要的时候及时地调用 locationManager.removeUpdate(listener) 停止监听。
+
+通过 locationManager.getLastKnownLocation(provider) 取得系统上次缓存的地理位置。(虽然是缓存的值，但也是需要 permission 的)。
+
+### 优化策略
+
+上面关于 provider 的选择其实已有所涉及，再看 [Android 地理位置服务解析](http://unclechen.github.io/2016/09/02/Android%E5%9C%B0%E7%90%86%E4%BD%8D%E7%BD%AE%E6%9C%8D%E5%8A%A1%E8%A7%A3%E6%9E%90/) 这篇文章，写得蛮详细的，包括官方文档的翻译内容。
+
+## Note 2
 
 使用 Google Play Service 提供的 Fused Location API，替代 Android 系统提供的原生 API。
 
@@ -439,7 +521,7 @@ ActivityRecognitionApi 需要 `com.google.android.gms.permission.ACTIVITY_RECOGN
 
 （如果不能用 GooglePlay，那有没有第三方实现此功能的库啊??)
 
-## Note 2
+## Note 3
 
 使用 Google Maps API。
 
@@ -485,10 +567,10 @@ That's all，然后工程就可以跑起来了。
 
 重要的内容，讲解了 GoogleMap 对象的一些配置 api，比如地图类型，摄像头初始位置...
 
-1. 展示地图的容器：MapFragment 或 MapView，MapView 与 MapFragment 很相似，它也充当地图容器，通过 GoogleMap 对象公开核心地图功能。推荐使用前者。
-1. 地图对象 GoogleMap，由上例可知，可以 onMapReady(GoogleMap googleMap) 回调中取得，回调通过 MapFragment 的 getMapAsync() 方法注册。
+1. 展示地图的容器：MapFragment 或 MapView，MapView 与 MapFragment 很相似，它也充当地图容器，用来展示地图，通过 GoogleMap 对象公开核心地图功能。(我觉得 MapFragment 里面就是包了一个 MapView 对象，它管理了 MapView 的生命周期)。
+1. 地图对象 GoogleMap，由上例可知，可以 onMapReady(GoogleMap googleMap) 回调中取得，回调通过 MapFragment/MapView 的 getMapAsync() 方法注册。
 
-### 在地图上绘制 
+### 在地图上绘制
 
 #### 标记
 
@@ -515,3 +597,10 @@ Google Maps API for Android 提供了一些简单的方法，让您可以方便�
 虽然点击此按钮后会定位到当前位置，但 map 并没有提供 api 去获取这个位置的具体值，你还是需要自己手动通过 Location API 去拿到当前位置的值。
 
 (咦，GoogleMaps API 并不需要处理 GoogleApiClient 连接的问题... 嗯，也是可以理解的，这部分功能应该是 GoogleMaps SDK 独立处理的)
+
+## Note 4
+
+开源项目学习：
+
+1. [mauron85/react-native-background-geolocation](https://github.com/mauron85/react-native-background-geolocation)
+1. [mrmans0n/smart-location-lib](https://github.com/mrmans0n/smart-location-lib)
